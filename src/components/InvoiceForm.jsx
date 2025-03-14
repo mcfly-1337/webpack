@@ -1,39 +1,43 @@
 "use client";
 import React from "react";
-function InvoiceForm({ formData, handleInputChange, handleSubmit, isEditing }) {
-  const validateDateFormat = (e) => {
-    const dateInput = e.target.value;
+function InvoiceForm({
+  formData,
+  handleInputChange,
+  handleSubmit,
+  isEditing,
+  isSubmitting,
+}) {
+  // Format date input with slashes
+  const formatDateInput = (e) => {
+    const input = e.target.value;
 
-    if (!/^[\d/]*$/.test(dateInput)) {
-      return;
-    }
+    // Only allow digits and slashes
+    if (!/^[\d/]*$/.test(input)) return;
 
-    let formattedDate = dateInput;
-    if (dateInput.length === 2 && !dateInput.includes("/")) {
-      formattedDate = dateInput + "/";
+    let formatted = input;
+
+    // Add slashes automatically
+    if (input.length === 2 && !input.includes("/")) {
+      formatted = input + "/";
     } else if (
-      dateInput.length === 5 &&
-      dateInput.charAt(2) === "/" &&
-      !dateInput.includes("/", 3)
+      input.length === 5 &&
+      input.charAt(2) === "/" &&
+      !input.includes("/", 3)
     ) {
-      formattedDate = dateInput + "/";
+      formatted = input + "/";
     }
 
-    if (formattedDate.length <= 10) {
-      const event = {
-        target: {
-          name: "date",
-          value: formattedDate,
-        },
-      };
-      handleInputChange(event);
+    if (formatted.length <= 10) {
+      handleInputChange({
+        target: { name: "date", value: formatted },
+      });
     }
   };
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-md mb-6 border border-gray-200">
       <h2 className="text-xl font-semibold mb-4 text-gray-800">
-        {isEditing ? "Hisob-fakturani tahrirlash" : "Add new invoice"}
+        {isEditing ? "Edit Invoice" : "Add New Invoice"}
       </h2>
 
       <form onSubmit={handleSubmit}>
@@ -45,11 +49,11 @@ function InvoiceForm({ formData, handleInputChange, handleSubmit, isEditing }) {
             type="text"
             name="date"
             value={formData.date}
-            onChange={validateDateFormat}
+            onChange={formatDateInput}
             placeholder="DD/MM/YYYY"
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             required
-            pattern="\d{2}/\d{2}/\d{4}"
+            disabled={isSubmitting}
           />
         </div>
 
@@ -64,6 +68,7 @@ function InvoiceForm({ formData, handleInputChange, handleSubmit, isEditing }) {
             onChange={handleInputChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             required
+            disabled={isSubmitting}
           />
         </div>
 
@@ -79,6 +84,7 @@ function InvoiceForm({ formData, handleInputChange, handleSubmit, isEditing }) {
             min="0"
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             required
+            disabled={isSubmitting}
           />
         </div>
 
@@ -92,9 +98,9 @@ function InvoiceForm({ formData, handleInputChange, handleSubmit, isEditing }) {
             value={formData.paid}
             onChange={handleInputChange}
             min="0"
-            max={formData.payable}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             required
+            disabled={isSubmitting}
           />
         </div>
 
@@ -113,9 +119,12 @@ function InvoiceForm({ formData, handleInputChange, handleSubmit, isEditing }) {
 
         <button
           type="submit"
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-md transition duration-150 ease-in-out mt-2"
+          className={`bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-md transition duration-150 ease-in-out mt-2 ${
+            isSubmitting ? "opacity-70 cursor-not-allowed" : ""
+          }`}
+          disabled={isSubmitting}
         >
-          {isEditing ? "Update" : "Add"}
+          {isSubmitting ? "Processing..." : isEditing ? "Update" : "Add"}
         </button>
       </form>
     </div>

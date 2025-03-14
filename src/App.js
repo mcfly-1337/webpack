@@ -1,18 +1,40 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React from "react";
+import { useState } from "react";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import SearchBar from "./components/SearchBar";
 import AddButton from "./components/AddButton";
 import InvoiceForm from "./components/InvoiceForm";
 import InvoiceTable from "./components/InvoiceTable";
-import { getUsers, createUser, updateUser, deleteUser } from "../js/api";
+import {
+  getInvoices,
+  createInvoice,
+  updateInvoice,
+  deleteInvoice,
+  isValidDateFormat,
+  getCurrentDate,
+} from "./service/invoiceService";
 
-function App() {
-  const [invoices, setInvoices] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+// Create a client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
+function InvoiceApp() {
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [editIndex, setEditIndex] = useState(-1);
+  const [editingInvoice, setEditingInvoice] = useState(null);
   const [formData, setFormData] = useState({
     date: "",
     customer: "",
@@ -20,163 +42,123 @@ function App() {
     paid: 0,
   });
 
-  useEffect(() => {
-    const loadInvoices = async () => {
-      try {
-        setLoading(true);
+  const queryClient = useQueryClient();
 
-        const userData = await getUsers();
+  // Fetch invoices
+  const {
+    data: invoices,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["invoices"],
+    queryFn: getInvoices,
+  });
 
-        if (!userData || !Array.isArray(userData)) {
-          throw new Error(
-            "Ma'lumotlar noto'g'ri formatda: " + JSON.stringify(userData)
-          );
-        }
+  // Create invoice mutation
+  const createMutation = useMutation({
+    mutationFn: createInvoice,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      resetForm();
+    },
+  });
 
-        const transformedData = userData.map((user) => ({
-          id: user.id.toString(),
-          date: user.date || getCurrentDate(),
-          customer: user.customer || "Noma'lum",
-          payable: user.payableAmount || 0,
-          paid: user.paidAmount || 0,
-          due: user.dueAmount || 0,
-        }));
+  // Update invoice mutation
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => updateInvoice(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      resetForm();
+    },
+  });
 
-        setInvoices(transformedData);
-        setError(null);
-      } catch (err) {
-        setError(`Ma'lumotlarni olishda xatolik: ${err.message}`);
-        console.error("Ma'lumotlarni olishda xatolik:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Delete invoice mutation
+  const deleteMutation = useMutation({
+    mutationFn: deleteInvoice,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    },
+  });
 
-    loadInvoices();
-  }, []);
-
-  function handleSearch(e) {
-    setSearch(e.target.value);
-  }
-
+  // Filter invoices based on search
   const filteredInvoices = invoices
-    ? invoices.filter((invoice) => {
-        return (
+    ? invoices.filter(
+        (invoice) =>
           invoice.id.toLowerCase().includes(search.toLowerCase()) ||
           invoice.customer.toLowerCase().includes(search.toLowerCase()) ||
           invoice.date.includes(search)
-        );
-      })
-    : null;
+      )
+    : [];
 
+  // Handle form input changes
   function handleInputChange(e) {
     const { name, value } = e.target;
-
     setFormData({
       ...formData,
       [name]: name === "payable" || name === "paid" ? Number(value) : value,
     });
   }
 
-  async function addInvoice(e) {
+  // Add new invoice
+  function handleAddInvoice(e) {
     e.preventDefault();
 
-    // Sana formatini tekshirish
     if (!isValidDateFormat(formData.date)) {
-      alert("Sana DD/MM/YYYY formatida bo'lishi kerak (masalan: 23/09/2024)");
+      alert("Date must be in DD/MM/YYYY format");
       return;
     }
 
-    const newUserData = {
+    createMutation.mutate({
       date: formData.date || getCurrentDate(),
       customer: formData.customer,
       payable: formData.payable,
       paid: formData.paid,
-    };
-
-    try {
-      await createUser(newUserData);
-
-      refreshInvoices();
-
-      resetForm();
-    } catch (err) {
-      console.error("Hisob-faktura qo'shishda xatolik:", err);
-      alert(
-        "Hisob-faktura qo'shib bo'lmadi. Iltimos, qaytadan urinib ko'ring."
-      );
-    }
+    });
   }
 
-  async function updateInvoice(e) {
+  // Update existing invoice
+  function handleUpdateInvoice(e) {
     e.preventDefault();
 
-    // Sana formatini tekshirish
     if (!isValidDateFormat(formData.date)) {
-      alert("Sana DD/MM/YYYY formatida bo'lishi kerak (masalan: 23/09/2024)");
+      alert("Date must be in DD/MM/YYYY format");
       return;
     }
 
-    if (editIndex === -1 || !invoices || !invoices[editIndex]) {
-      console.error(
-        "Tahrirlash indeksi noto'g'ri yoki ma'lumotlar yuklanmagan"
-      );
-      return;
-    }
-
-    const invoiceId = invoices[editIndex].id;
-
-    try {
-      const updatedUserData = {
+    updateMutation.mutate({
+      id: editingInvoice.id,
+      data: {
         date: formData.date,
         customer: formData.customer,
         payable: formData.payable,
         paid: formData.paid,
-      };
+      },
+    });
+  }
 
-      await updateUser(invoiceId, updatedUserData);
-
-      refreshInvoices();
-
-      resetForm();
-    } catch (err) {
-      console.error("Hisob-fakturani yangilashda xatolik:", err);
-      alert(`Hisob-fakturani yangilab bo'lmadi: ${err.message}`);
+  // Delete invoice
+  function handleDeleteInvoice(id) {
+    if (window.confirm("Are you sure you want to delete this invoice?")) {
+      deleteMutation.mutate(id);
     }
   }
 
-  async function deleteInvoice(id) {
-    if (window.confirm("Haqiqatan ham bu hisob-fakturani o'chirmoqchimisiz?")) {
-      try {
-        await deleteUser(id);
-
-        refreshInvoices();
-      } catch (err) {
-        console.error("Hisob-fakturani o'chirishda xatolik:", err);
-        alert(
-          "Hisob-fakturani o'chirib bo'lmadi. Iltimos, qaytadan urinib ko'ring."
-        );
-      }
-    }
-  }
-
-  function startEdit(id) {
-    const invoiceToEdit = invoices.find((invoice) => invoice.id === id);
-
-    if (invoiceToEdit) {
+  // Start editing an invoice
+  function handleEditInvoice(id) {
+    const invoice = invoices.find((inv) => inv.id === id);
+    if (invoice) {
+      setEditingInvoice(invoice);
       setFormData({
-        date: invoiceToEdit.date,
-        customer: invoiceToEdit.customer,
-        payable: invoiceToEdit.payable,
-        paid: invoiceToEdit.paid,
+        date: invoice.date,
+        customer: invoice.customer,
+        payable: invoice.payable,
+        paid: invoice.paid,
       });
-
-      setEditIndex(invoices.findIndex((invoice) => invoice.id === id));
-
       setShowForm(true);
     }
   }
 
+  // Reset form and editing state
   function resetForm() {
     setFormData({
       date: "",
@@ -184,77 +166,17 @@ function App() {
       payable: 0,
       paid: 0,
     });
-    setEditIndex(-1);
+    setEditingInvoice(null);
     setShowForm(false);
-  }
-
-  // Sana formatini tekshirish
-  function isValidDateFormat(dateString) {
-    const regex = /^\d{2}\/\d{2}\/\d{4}$/;
-    if (!regex.test(dateString)) return false;
-
-    const [day, month, year] = dateString.split("/").map(Number);
-
-    // Oy va kun qiymatlarini tekshirish
-    if (month < 1 || month > 12) return false;
-    if (day < 1 || day > 31) return false;
-
-    // Fevral oyi uchun maxsus tekshirish
-    if (month === 2) {
-      const isLeapYear =
-        (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-      if (day > (isLeapYear ? 29 : 28)) return false;
-    }
-
-    // 30 kunlik oylar uchun tekshirish
-    if ([4, 6, 9, 11].includes(month) && day > 30) return false;
-
-    return true;
-  }
-
-  function getCurrentDate() {
-    const today = new Date();
-    const day = String(today.getDate()).padStart(2, "0");
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const year = today.getFullYear();
-    return `${day}/${month}/${year}`;
-  }
-
-  async function refreshInvoices() {
-    try {
-      setLoading(true);
-      const userData = await getUsers();
-
-      if (!userData || !Array.isArray(userData)) {
-        throw new Error(
-          "Ma'lumotlar noto'g'ri formatda: " + JSON.stringify(userData)
-        );
-      }
-
-      const transformedData = userData.map((user) => ({
-        id: user.id.toString(),
-        date: user.date || getCurrentDate(),
-        customer: user.customer || "Noma'lum",
-        payable: user.payableAmount || 0,
-        paid: user.paidAmount || 0,
-        due: user.dueAmount || 0,
-      }));
-
-      setInvoices(transformedData);
-      setError(null);
-    } catch (err) {
-      setError(`Ma'lumotlarni olishda xatolik: ${err.message}`);
-      console.error("Ma'lumotlarni olishda xatolik:", err);
-    } finally {
-      setLoading(false);
-    }
   }
 
   return (
     <div className="max-w-6xl mx-auto p-5 mt-[60px]">
       <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
-        <SearchBar search={search} handleSearch={handleSearch} />
-
+        <SearchBar
+          search={search}
+          handleSearch={(e) => setSearch(e.target.value)}
+        />
         <AddButton
           showForm={showForm}
           onClick={() => {
@@ -268,25 +190,38 @@ function App() {
         <InvoiceForm
           formData={formData}
           handleInputChange={handleInputChange}
-          handleSubmit={editIndex === -1 ? addInvoice : updateInvoice}
-          isEditing={editIndex !== -1}
+          handleSubmit={editingInvoice ? handleUpdateInvoice : handleAddInvoice}
+          isEditing={!!editingInvoice}
+          isSubmitting={createMutation.isPending || updateMutation.isPending}
         />
       ) : (
         <>
-          {loading && (
-            <p className="text-center py-4">Ma'lumotlar yuklanmoqda...</p>
+          {isLoading && <p className="text-center py-4">Loading data...</p>}
+          {error && (
+            <p className="text-center py-4 text-red-500">
+              Error: {error.message}
+            </p>
           )}
-          {error && <p className="text-center py-4 text-red-500">{error}</p>}
-          {!loading && !error && (
+          {!isLoading && !error && (
             <InvoiceTable
               invoices={filteredInvoices}
-              onEdit={startEdit}
-              onDelete={deleteInvoice}
+              onEdit={handleEditInvoice}
+              onDelete={handleDeleteInvoice}
+              isDeleting={deleteMutation.isPending}
             />
           )}
         </>
       )}
     </div>
+  );
+}
+
+// Wrap the app with QueryClientProvider
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <InvoiceApp />
+    </QueryClientProvider>
   );
 }
 
